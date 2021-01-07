@@ -8,6 +8,7 @@
 # @Function: 获取豆瓣电影短评
 
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
@@ -17,11 +18,14 @@ import requests
 import json
 import time
 
-Cookies_str = ''
+Cookies_str = 'll="118281"; bid=zkdKY0k9vjs; push_doumail_num=0; push_noty_num=0; __utmv=30149280.22971; gr_user_id=04b36935-6824-41f3-881c-4ce9fa1ba388; _vwo_uuid_v2=DDE6AB83892CFEDFBF673F07B0ECD60AA|0e102c6de0f491e988ca37a52307f588; ap_v=0,6.0; __utmc=30149280; __utmc=223695111; _pk_ref.100001.4cf6=%5B%22%22%2C%22%22%2C1609994387%2C%22https%3A%2F%2Faccounts.douban.com%2F%22%5D; _pk_ses.100001.4cf6=*; __utma=30149280.1480719386.1609745412.1609989897.1609994387.13; __utmb=30149280.0.10.1609994387; __utmz=30149280.1609994387.13.3.utmcsr=accounts.douban.com|utmccn=(referral)|utmcmd=referral|utmcct=/; __utma=223695111.1433316309.1609745540.1609989897.1609994387.14; __utmb=223695111.0.10.1609994387; __utmz=223695111.1609994387.14.3.utmcsr=accounts.douban.com|utmccn=(referral)|utmcmd=referral|utmcct=/; dbcl2="229941803:XePmkhHDKaM"; ck=x6uH; _pk_id.100001.4cf6=5bca1f7682d412e6.1609745540.14.1609994489.1609989937.'
 pageCookies = {}
 
 
 def initCookie():
+    """
+    :return:
+    """
     driver = webdriver.Chrome()
     driver.maximize_window()
     driver.get('https://www.douban.com/')
@@ -39,8 +43,7 @@ def login():
     for k_v in Cookies_str.split(';'):
         k, v = k_v.split('=', 1)
         pageCookies[k.strip()] = v.replace('"', '')
-
-    URL = 'https://movie.douban.com/subject/26266893/comments?start=20&limit=20&status=P&sort=new_score'
+    URL = 'https://movie.douban.com/subject/26266893/comments?start=480&limit=20&status=P&sort=new_score'
     driver = webdriver.Chrome()
     driver.maximize_window()
     driver.get(URL)
@@ -67,7 +70,7 @@ def getUserData(url):
     :param url
     :return: userInfo
     """
-    time.sleep(1)
+    time.sleep(2)
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36'
     }
@@ -97,12 +100,11 @@ def getPageData(strPage):
     :return: pageShortCommentData
     """
     soup = BeautifulSoup(strPage, "html.parser")
-
+    time.sleep(2)
     comment_item = soup.find_all('div', class_="comment-item")
     pageShortCommentData = pd.DataFrame()
     for comment in comment_item:
         userNameUrl = comment.a['href']
-        print(userNameUrl)
         userLocation = ''
         userDate = ''
         try:
@@ -135,36 +137,39 @@ def getPageData(strPage):
 
 def getAllData():
     """
-
     :rtype: object
     """
+    pageIndex = 0
     driver = login()
     allData = pd.DataFrame()
     wait = WebDriverWait(driver, 10)
     while True:
-        wait.until(
-            ec.element_to_be_clickable(
-                (By.CSS_SELECTOR, '#comments > div:nth-child(4) > div.comment > h3 > span.comment-info > a')
+        try:
+            wait.until(
+                ec.element_to_be_clickable(
+                    (By.CSS_SELECTOR, '#comments > div:nth-child(4) > div.comment > h3 > span.comment-info > a')
+                )
             )
-        )
-
-        pageData = getPageData(driver.page_source)
-        allData = allData.append(pageData)
-        if not driver.find_element_by_css_selector('#paginator > a'):
+            pageData = getPageData(driver.page_source)
+            allData = allData.append(pageData)
+            confirm = wait.until(
+                ec.element_to_be_clickable(
+                    (By.CSS_SELECTOR, '#paginator > a.next')
+                )
+            )
+            print(len(allData))
+            print(allData)
+            if len(allData) >= 20:
+                allData.to_csv('allData.csv', mode='a', header=False)
+                allData = pd.DataFrame()
+            confirm.click()
+            pageIndex += 1
+            print("现在页数：" + str(pageIndex))
+        except TimeoutException as e:
+            print("已经到最后一页")
             break
-
-        confirm = wait.until(
-            ec.element_to_be_clickable(
-                (By.CSS_SELECTOR, '#paginator > a')
-            )
-        )
-
-        confirm.click()
-        print(len(allData))
-    return allData
 
 
 if __name__ == '__main__':
     initCookie()
-    AllData = getAllData()
-    AllData.to_csv('allData.csv', index=0)
+    getAllData()
